@@ -31,6 +31,8 @@ type Member struct {
 	// but not from Kubernetes pod list.
 	ID uint64
 
+	// whether this is a seed member
+	Seed         bool
 	SecurePeer   bool
 	SecureClient bool
 }

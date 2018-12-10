@@ -41,6 +41,11 @@ func etcdContainer(cmd []string, repo, version string) v1.Container {
 		Image:   ImageName(repo, version),
 		Ports: []v1.ContainerPort{
 			{
+				Name:          "operatorsync",
+				ContainerPort: int32(2381),
+				Protocol:      v1.ProtocolTCP,
+			},
+			{
 				Name:          "server",
 				ContainerPort: int32(2380),
 				Protocol:      v1.ProtocolTCP,

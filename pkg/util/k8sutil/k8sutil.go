@@ -296,7 +296,7 @@ func NewEtcdPodPVC(m *etcdutil.Member, pvcSpec v1.PersistentVolumeClaimSpec, clu
 }
 
 func newEtcdPod(m *etcdutil.Member, initialCluster []string, clusterName, state, token string, cs api.ClusterSpec) *v1.Pod {
-	commands := fmt.Sprintf("/usr/local/bin/etcd --data-dir=%s --name=%s --initial-advertise-peer-urls=%s "+
+	commands := fmt.Sprintf("exec /usr/local/bin/etcd --data-dir=%s --name=%s --initial-advertise-peer-urls=%s "+
 		"--listen-peer-urls=%s --listen-client-urls=%s --advertise-client-urls=%s "+
 		"--initial-cluster=%s --initial-cluster-state=%s",
 		dataDir, m.Name, m.PeerURL(), m.ListenPeerURL(), m.ListenClientURL(), m.ClientURL(), strings.Join(initialCluster, ","), state)
@@ -323,8 +323,24 @@ func newEtcdPod(m *etcdutil.Member, initialCluster []string, clusterName, state,
 	readinessProbe.PeriodSeconds = 5
 	readinessProbe.FailureThreshold = 3
 
+	// only inject sync logic if state is "existing"
+	var execCommands []string
+	if state == "existing" {
+		execCommands = []string{"/bin/sh", "-c", fmt.Sprintf(`
+	echo "waiting for operator sync signal on TCP/2381 because cluster is existing..."
+	OPERATOR_SYNC=$(nc -l -p 2381)
+	echo "operator sync signal received, proceeding to startup: $OPERATOR_SYNC"
+	%s`,
+			commands)}
+	} else {
+		execCommands = []string{"/bin/sh", "-c", fmt.Sprintf(`
+		echo "skipping operator sync because cluster is new"
+		%s`,
+			commands)}
+	}
+
 	container := containerWithProbes(
-		etcdContainer(strings.Split(commands, " "), cs.Repository, cs.Version),
+		etcdContainer(execCommands, cs.Repository, cs.Version),
 		livenessProbe,
 		readinessProbe)
 

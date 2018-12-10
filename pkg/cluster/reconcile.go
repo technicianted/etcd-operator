@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"time"
 
 	api "github.com/coreos/etcd-operator/pkg/apis/etcd/v1beta2"
 	"github.com/coreos/etcd-operator/pkg/util/constants"
@@ -45,6 +47,17 @@ func (c *Cluster) reconcile(pods []*v1.Pod) error {
 
 	sp := c.cluster.Spec
 	running := podsToMemberSet(pods, c.isSecureClient())
+
+	// check if there is a running member that was not added to etcd yet
+	for name, member := range c.members {
+		if _, found := running[name]; found && !member.Seed && member.ID == 0 {
+			c.logger.Infof("adding member %s to etcd", name)
+			err := c.addOneMemberToEtcd(member)
+			if err != nil {
+				c.logger.Errorf("failed to add member %s to etcd: %v", name, err)
+			}
+		}
+	}
 	if !running.IsEqual(c.members) || c.members.Size() != sp.Size {
 		return c.reconcileMembers(running)
 	}
@@ -116,6 +129,22 @@ func (c *Cluster) resize() error {
 func (c *Cluster) addOneMember() error {
 	c.status.SetScalingUpCondition(c.members.Size(), c.cluster.Spec.Size)
 
+	newMember := c.newMember()
+	c.members.Add(newMember)
+
+	if err := c.createPod(c.members, newMember, "existing"); err != nil {
+		return fmt.Errorf("fail to create member's pod (%s): %v", newMember.Name, err)
+	}
+	c.logger.Infof("added member (%s)", newMember.Name)
+	_, err := c.eventsCli.Create(k8sutil.NewMemberAddEvent(newMember.Name, c.cluster))
+	if err != nil {
+		c.logger.Errorf("failed to create new member add event: %v", err)
+	}
+	return nil
+}
+
+func (c *Cluster) addOneMemberToEtcd(newMember *etcdutil.Member) error {
+
 	cfg := clientv3.Config{
 		Endpoints:   c.members.ClientURLs(),
 		DialTimeout: constants.DefaultDialTimeout,
@@ -127,7 +156,6 @@ func (c *Cluster) addOneMember() error {
 	}
 	defer etcdcli.Close()
 
-	newMember := c.newMember()
 	ctx, cancel := context.WithTimeout(context.Background(), constants.DefaultRequestTimeout)
 	resp, err := etcdcli.MemberAdd(ctx, []string{newMember.PeerURL()})
 	cancel()
@@ -135,16 +163,30 @@ func (c *Cluster) addOneMember() error {
 		return fmt.Errorf("fail to add new member (%s): %v", newMember.Name, err)
 	}
 	newMember.ID = resp.Member.ID
-	c.members.Add(newMember)
 
-	if err := c.createPod(c.members, newMember, "existing"); err != nil {
-		return fmt.Errorf("fail to create member's pod (%s): %v", newMember.Name, err)
+	// new member is waiting for a sync signal
+	address := fmt.Sprintf("%s:%d", newMember.Addr(), 2381)
+	c.logger.Infof("sending sync signal to member %s on %s", newMember.Name, address)
+	err = nil
+	for i := 0; i < 4; i++ {
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			c.logger.Errorf("unable to connect to %s: %v", address, err)
+		} else {
+			defer conn.Close()
+			_, err := fmt.Fprintf(conn, "GO")
+			if err != nil {
+				c.logger.Errorf("unable to write signal to socket: %v", err)
+			} else {
+				break
+			}
+		}
+		time.Sleep(2 * time.Second)
 	}
-	c.logger.Infof("added member (%s)", newMember.Name)
-	_, err = c.eventsCli.Create(k8sutil.NewMemberAddEvent(newMember.Name, c.cluster))
 	if err != nil {
-		c.logger.Errorf("failed to create new member add event: %v", err)
+		return fmt.Errorf("unable to send member %s sync signal on %s: gving up", newMember.Name, address)
 	}
+
 	return nil
 }
 

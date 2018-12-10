@@ -310,6 +310,7 @@ func (c *Cluster) startSeedMember() error {
 	m := &etcdutil.Member{
 		Name:         k8sutil.UniqueMemberName(c.cluster.Name),
 		Namespace:    c.cluster.Namespace,
+		Seed:         true,
 		SecurePeer:   c.isSecurePeer(),
 		SecureClient: c.isSecureClient(),
 	}
