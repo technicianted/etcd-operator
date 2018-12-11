@@ -120,6 +120,20 @@ spec:
       fsGroup: 9000
 ```
 
+## Custom ephemeral emptyDir medium definition
+
+By default, if no PersistentVolumeClaim spec is provided, etcd data is stored in an `emptyDir` volume.
+This option lets you control `Medium` property of `emptyDir` volume. You can find more infformation about possible values in Kubernetes [docs](https://kubernetes.io/docs/concepts/storage/volumes/#emptydir).
+
+> Note: Kubernetes `emptyDir` volume is unbounded. You need to be careful about how much storage used by etcd and request pod memory accordingly.
+
+```yaml
+spec:
+  size: 3
+  pod:
+    ephemeralStorageMedium: Memory
+```
+
 ## Custom PersistentVolumeClaim definition
 
 > Note: Change $STORAGECLASS for your preferred StorageClass or remove the line to use the default one. 
