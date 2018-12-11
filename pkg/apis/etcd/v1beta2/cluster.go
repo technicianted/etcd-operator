@@ -139,6 +139,14 @@ type PodPolicy struct {
 	// not the stable storage. Future work need to make it used as stable storage.
 	PersistentVolumeClaimSpec *v1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 
+	// EphemeralStorageMedium specifies the media type for emptyDir volume in case
+	// PersistentVolumeClaimSpec was not specified.
+	// Note that Memory medium is unbound in kubernetes. Care must be taken to ensure
+	// that it will not grow beyond the requested memory limit for the pods.
+	// Refere to kubernetes documentation for possible values:
+	// https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
+	EphemeralStorageMedium string `json:"ephemeralStorageMedium,omitempty"`
+
 	// Annotations specifies the annotations to attach to pods the operator creates for the
 	// etcd cluster.
 	// The "etcd.version" annotation is reserved for the internal use of the etcd operator.
