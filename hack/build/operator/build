@@ -11,6 +11,9 @@ if ! which go > /dev/null; then
 	exit 1
 fi
 
+curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+dep ensure -v
+
 GIT_SHA=`git rev-parse --short HEAD || echo "GitNotFound"`
 
 bin_dir="$(pwd)/_output/bin"
